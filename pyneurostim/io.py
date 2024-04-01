@@ -67,8 +67,6 @@ class NeuroStim:
     def check_item(self, items, item_type):
         return len([item for item in items if item['item_type'] == item_type]) > 0
 
-    #def get_property(self, item, name):
-    #    return next(filter(lambda property: property['name'] == name, item['properties']))['value']
     def get_property(self, item, name):
         return item['properties'][name]['value']
 
