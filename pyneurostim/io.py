@@ -38,7 +38,8 @@ class NeuroStim:
             self.load_xdf(xdf_file)
             self._time_correction()
 
-    def event_filter(self, event_name=None, event_source=None, trial_types=None, block_types=None, sample_types=None):
+    def event_filter(self, event_name=None, event_source=None, trial_types=None, block_types=None, sample_types=None, sample_id=None):
+
         event_args = {'event_name': event_name, 'source': event_source}
         event_args = {key: value for key, value in event_args.items() if value is not None}
 
@@ -51,6 +52,9 @@ class NeuroStim:
 
         for key, value in sample_args.items():
             filtered_list = list(filter(lambda event: self.samples[event['sample_id']].get(key, None) in value, filtered_list))
+
+        if sample_id is not None:
+            filtered_list = list(filter(lambda event: event['sample_id'] == sample_id, filtered_list))
 
         return list(filtered_list)
 
