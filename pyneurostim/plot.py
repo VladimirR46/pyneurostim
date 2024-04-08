@@ -156,16 +156,18 @@ def plot_samples(scene, samples):
 
 
 def plot_design(samples):
-    if not QtWidgets.QApplication.instance():
+    app = QtWidgets.QApplication.instance()
+    if app is None:
         app = QtWidgets.QApplication([])
-    else:
-        app = QtWidgets.QApplication.instance()
 
     scene = QGraphicsScene(0, 0, 400, 400)
-    view = QGraphicsView(scene)
+    view = QGraphicsView(scene=scene, parent=None)
+
     view.show()
     plot_samples(scene, samples)
     #draw_trials(scene, samples)
     view.setMinimumSize(QSize(900, 300))
-    app.exec_()
+    view.raise_()
+    #app.exec_()
+    return view
 

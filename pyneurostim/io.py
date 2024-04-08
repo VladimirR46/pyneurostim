@@ -4,7 +4,7 @@ import math
 import pyxdf
 from datetime import datetime
 import mne
-from mne.io.pick import get_channel_type_constants
+from mne.io import get_channel_type_constants
 
 from .plot import plot_design
 
@@ -185,4 +185,4 @@ class NeuroStim:
         return raw
 
     def plot_design(self):
-        plot_design(self.samples)
+        return plot_design(self.samples)
