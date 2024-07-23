@@ -5,6 +5,7 @@ import pyxdf
 from datetime import datetime
 import mne
 from mne.io import get_channel_type_constants
+import pandas as pd
 
 from .plot import plot_design
 
@@ -132,7 +133,7 @@ class NeuroStim:
             if 'EEG' in stream['info']['type'][0]:
                 self.eeg_stream_id = stream_id
 
-    def raw_xdf(self, annotation=False):
+    def raw_xdf(self, annotation=False, srate_mode='nominal'):
         stream = self.streams[self.eeg_stream_id]
 
         n_chans = int(stream["info"]["channel_count"][0])
@@ -156,7 +157,11 @@ class NeuroStim:
 
         all_time_series = stream["time_series"]
         first_time = stream["time_stamps"][0]
-        fs = float(np.array(stream["info"]["effective_srate"]).item())
+
+        if srate_mode == 'nominal':
+            fs = int(float(np.array(stream["info"]["nominal_srate"]).item()))
+        else:
+            fs = float(np.array(stream["info"]["effective_srate"]).item())
 
         #delete spaces
         labels = [s.replace(" ", "") for s in labels]
@@ -182,7 +187,32 @@ class NeuroStim:
 
             raw.annotations.append(events_time, events_duration, events_name)
 
-        return raw
+        events = self.events_to_df(raw)
+        return raw, events
 
     def plot_design(self):
         return plot_design(self.samples)
+
+    def events_to_df(self, raw=None):
+        array = []
+        if raw is not None:
+            first_time = self.streams[self.eeg_stream_id]["time_stamps"][0]
+
+        for event in self.events:
+            if raw is not None:
+                time = event['time'] - first_time
+                time_idx = raw.time_as_index(time)[0]
+            else:
+                time = event['time']
+                time_idx = None
+
+            sample = self.samples[event['sample_id']]
+            row = {'source': event['source'], 'event_name': event['event_name'], 'sample_type': sample['sample_type'],
+                   'trial_type': sample['trial_type'], 'block_type': sample['block_type'],
+                   'block_id': sample['block_id'], 'trial_id': sample['trial_id'], 'event_id': event['event_id'],
+                   'item_id': event['item_id'], 'sample_id': event['sample_id'], 'trigger_code': sample['trigger_code'],
+                   'time': time, 'index': time_idx}
+            row['duration'] = sample['duration'] if row['event_name'] == 'show' else ''
+            array.append(row)
+        df = pd.DataFrame(array)
+        return df
