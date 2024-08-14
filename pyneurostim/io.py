@@ -8,6 +8,7 @@ from mne.io import get_channel_type_constants
 import pandas as pd
 
 from .plot import plot_design
+from .xdf import _raw_xdf
 
 
 def find_nearest(array, value):
@@ -25,8 +26,8 @@ def load(task_file, xdf_file=None):
 class NeuroStim:
     def __init__(self, task_file, xdf_file=None):
         self.events = []  # lsl json events
-        self.event_stream_id = []
-        self.eeg_stream_id = []
+        self.event_stream_id = None
+        self.eeg_streams = {}
         self.streams = {}
         self.subject = []
         self.start_time = []
@@ -124,56 +125,31 @@ class NeuroStim:
             self.samples = data['samples']
 
     def load_xdf(self, xdf_file):
+        stream_info = pyxdf.resolve_streams(xdf_file)
+        for stream in stream_info:
+            if stream['name'] == 'NeuroStim-Events':
+                self.event_stream_id = stream['stream_id']
+            if stream['type'] == 'EEG':
+                self.eeg_streams[stream['name']] = stream['stream_id']
+
+        if not self.event_stream_id or not self.eeg_streams:
+            raise RuntimeError("NeuroStim-Events or EEG stream not found")
+
         self.streams, _ = pyxdf.load_xdf(xdf_file)
         self.streams = {stream["info"]["stream_id"]: stream for stream in self.streams}
 
-        for stream_id, stream in self.streams.items():
-            if 'NeuroStim-Events' in stream['info']['name'][0]:
-                self.event_stream_id = stream_id
-            if 'EEG' in stream['info']['type'][0]:
-                self.eeg_stream_id = stream_id
-
-    def raw_xdf(self, annotation=False, srate_mode='nominal'):
-        stream = self.streams[self.eeg_stream_id]
-
-        n_chans = int(stream["info"]["channel_count"][0])
-        labels, types, units = [], [], []
-        try:
-            for ch in stream["info"]["desc"][0]["channels"][0]["channel"]:
-                labels.append(str(ch["label"][0]))
-                if ch["type"] and ch["type"][0].lower() in get_channel_type_constants(include_defaults=True):  # noqa: E501
-                    types.append(ch["type"][0].lower())
-                else:
-                    types.append("misc")
-                units.append(ch["unit"][0] if ch["unit"] else "NA")
-        except (TypeError, IndexError):  # no channel labels found
-            pass
-        if not labels:
-            labels = [f"{stream['info']['name'][0]}_{n}" for n in range(n_chans)]
-        if not units:
-            units = ["NA" for _ in range(n_chans)]
-        if not types:
-            types = ["misc" for _ in range(n_chans)]
-
-        all_time_series = stream["time_series"]
-        first_time = stream["time_stamps"][0]
-
-        if srate_mode == 'nominal':
-            fs = int(float(np.array(stream["info"]["nominal_srate"]).item()))
+    def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None):
+        if len(self.eeg_streams) > 1:
+            if eeg_stream_names is None:
+                raise RuntimeError("It is necessary to set the names of the EEG streams")
+            stream_ids = [self.eeg_streams[name] for name in eeg_stream_names]
         else:
-            fs = float(np.array(stream["info"]["effective_srate"]).item())
+            stream_ids = list(self.eeg_streams.values())
 
-        #delete spaces
-        labels = [s.replace(" ", "") for s in labels]
+        if not fs_new and len(self.eeg_streams) > 1:
+            fs_new = int(float(np.array(self.streams[stream_ids[0]]["info"]["nominal_srate"]).item()))
 
-        info = mne.create_info(ch_names=labels, sfreq=fs, ch_types=types)
-
-        microvolts = ("microvolt", "microvolts", "µV", "μV", "uV")
-        scale = np.array([1e-6 if u in microvolts else 1 for u in units])
-        all_time_series_scaled = (all_time_series * scale).T
-
-        raw = mne.io.RawArray(all_time_series_scaled, info, verbose='error')
-        raw._filenames = [self.xdf_file]
+        raw, first_time = _raw_xdf(self.streams, self.xdf_file, stream_ids, fs_new)
 
         # convert events to annotations
         if annotation:
@@ -187,17 +163,17 @@ class NeuroStim:
 
             raw.annotations.append(events_time, events_duration, events_name)
 
-        events = self.events_to_df(raw)
+        events = self.events_to_df(raw, first_time)
         return raw, events
 
     def plot_design(self):
         return plot_design(self.samples)
 
-    def events_to_df(self, raw=None):
-        array = []
-        if raw is not None:
-            first_time = self.streams[self.eeg_stream_id]["time_stamps"][0]
+    def events_to_df(self, raw=None, first_time=None):
+        if raw and not first_time:
+            raise ValueError("Argument `first_time` required when use raw.")
 
+        array = []
         for event in self.events:
             if raw is not None:
                 time = event['time'] - first_time
