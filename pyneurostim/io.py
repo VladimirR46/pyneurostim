@@ -139,7 +139,7 @@ class NeuroStim:
         self.streams, _ = pyxdf.load_xdf(xdf_file)
         self.streams = {stream["info"]["stream_id"]: stream for stream in self.streams}
 
-    def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None):
+    def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None, extended_annotation=False):
         if len(self.eeg_streams) > 1:
             if eeg_stream_names is None:
                 raise RuntimeError("It is necessary to set the names of the EEG streams")
@@ -157,10 +157,18 @@ class NeuroStim:
             events = self.event_filter(event_name='show', event_source='sample')
             events_time, events_name, events_duration = [], [], []
             for event in events:
-                if self.samples[event['sample_id']]['sample_type'] != "":
+                sample = self.samples[event['sample_id']]
+                sample_type = sample['sample_type']
+                trial_type = sample['trial_type']
+                block_type = sample['block_type']
+                if sample_type != "":
                     events_time.append(event['time']-first_time)
-                    events_name.append(self.samples[event['sample_id']]['sample_type'])
                     events_duration.append(self.samples[event['sample_id']]['duration'])
+                    if extended_annotation:
+                        event_name = "@".join([sample_type, block_type, trial_type])
+                    else:
+                        event_name = sample_type
+                    events_name.append(event_name)
 
             raw.annotations.append(events_time, events_duration, events_name)
 
