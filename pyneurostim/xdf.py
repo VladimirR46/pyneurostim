@@ -4,6 +4,16 @@ import mne
 from mne.io import get_channel_type_constants
 
 
+def _fill_nan(data):
+    for i in range(data.shape[0]):
+        mask = np.isnan(data[i])
+        if any(mask):
+            idxs = np.where(~mask)[0]
+            data[i][:idxs[0]] = data[i][idxs[0]]
+            data[i][idxs[-1]:] = data[i][idxs[-1]]
+    return data
+
+
 def _resample_streams(streams, stream_ids, fs_new):
     """
     Resample multiple XDF streams to a given frequency.
@@ -128,6 +138,7 @@ def _raw_xdf(streams, fname, stream_ids, fs_new=None):
     microvolts = ("microvolt", "microvolts", "µV", "μV", "uV")
     scale = np.array([1e-6 if u in microvolts else 1 for u in units_all])
     all_time_series_scaled = (all_time_series * scale).T
+    all_time_series_scaled = _fill_nan(all_time_series_scaled)
 
     raw = mne.io.RawArray(all_time_series_scaled, info)
     raw._filenames = [fname]
