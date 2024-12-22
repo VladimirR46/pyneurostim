@@ -24,7 +24,7 @@ def load(task_file, xdf_file=None):
 
 
 class NeuroStim:
-    def __init__(self, task_file, xdf_file=None):
+    def __init__(self, task_file, xdf_file=None, event_stream_name="NeuroStim-Events"):
         self.events = []  # lsl json events
         self.event_stream_id = None
         self.eeg_streams = {}
@@ -34,6 +34,7 @@ class NeuroStim:
         self.task_name = ''
         self.samples = {}
         self.xdf_file = xdf_file
+        self.event_stream_name = event_stream_name
 
         self.load_task(task_file)
         if xdf_file:
@@ -91,7 +92,7 @@ class NeuroStim:
 
         # set lsl time
         for i, event in enumerate(self.events):
-            if event['event_id'] == self.streams[self.event_stream_id]['time_series'][i]:
+            if event['event_id'] == self.streams[self.event_stream_id]['time_series'][i][0]:
                 event['time'] = self.streams[self.event_stream_id]['time_stamps'][i]
 
     def _repair_lsl_time(self):
@@ -119,7 +120,7 @@ class NeuroStim:
         with open(file, encoding='utf-8') as json_file:
             data = json.load(json_file)
             self.events = data['events']
-            self.subject = data['Subject']
+            self.subject = data.get('Subject', 'Subject')
             self.start_time = datetime.strptime(data['StartTime'], '%d.%m.%Y %H:%M:%S')
             self.task_name = data['TaskName']
             self.samples = data['samples']
@@ -127,18 +128,18 @@ class NeuroStim:
     def load_xdf(self, xdf_file):
         stream_info = pyxdf.resolve_streams(xdf_file)
         for stream in stream_info:
-            if stream['name'] == 'NeuroStim-Events':
+            if stream['name'] == self.event_stream_name:
                 self.event_stream_id = stream['stream_id']
             if stream['type'] == 'EEG':
                 self.eeg_streams[stream['name']] = stream['stream_id']
 
         if not self.event_stream_id or not self.eeg_streams:
-            raise RuntimeError("NeuroStim-Events or EEG stream not found")
+            raise RuntimeError(f"{self.event_stream_name} or EEG stream not found")
 
         self.streams, _ = pyxdf.load_xdf(xdf_file)
         self.streams = {stream["info"]["stream_id"]: stream for stream in self.streams}
 
-    def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None):
+    def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None, extended_annotation=False):
         if len(self.eeg_streams) > 1:
             if eeg_stream_names is None:
                 raise RuntimeError("It is necessary to set the names of the EEG streams")
@@ -156,10 +157,18 @@ class NeuroStim:
             events = self.event_filter(event_name='show', event_source='sample')
             events_time, events_name, events_duration = [], [], []
             for event in events:
-                if self.samples[event['sample_id']]['sample_type'] != "":
+                sample = self.samples[event['sample_id']]
+                sample_type = sample['sample_type']
+                trial_type = sample['trial_type']
+                block_type = sample['block_type']
+                if sample_type != "":
                     events_time.append(event['time']-first_time)
-                    events_name.append(self.samples[event['sample_id']]['sample_type'])
                     events_duration.append(self.samples[event['sample_id']]['duration'])
+                    if extended_annotation:
+                        event_name = "@".join([sample_type, block_type, trial_type])
+                    else:
+                        event_name = sample_type
+                    events_name.append(event_name)
 
             raw.annotations.append(events_time, events_duration, events_name)
 
