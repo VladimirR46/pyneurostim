@@ -134,7 +134,7 @@ class NeuroStim:
                 self.eeg_streams[stream['name']] = stream['stream_id']
 
         if not self.event_stream_id or not self.eeg_streams:
-            raise RuntimeError(f"{self.event_stream_name} or EEG stream not found")
+            print(f"Warning: {self.event_stream_name} or EEG stream not found")
 
         self.streams, _ = pyxdf.load_xdf(xdf_file)
         self.streams = {stream["info"]["stream_id"]: stream for stream in self.streams}
@@ -172,6 +172,22 @@ class NeuroStim:
 
             raw.annotations.append(events_time, events_duration, events_name)
 
+        events = self.events_to_df(raw, first_time)
+        return raw, events
+
+    def raw_stream(self, stream_name=None, stream_id=None):
+        if stream_name:
+            stream_id = None
+            for key, stream in self.streams.items():
+                if stream['info']['name'][0] == stream_name:
+                    stream_id = key
+                    break
+            if stream_id is None:
+                raise RuntimeError(f"Stream with name '{stream_name}' not found")
+        elif stream_id is None:
+            raise RuntimeError("It is necessary to set the name or ID of the stream")
+
+        raw, first_time = _raw_xdf(self.streams, self.xdf_file, [stream_id])
         events = self.events_to_df(raw, first_time)
         return raw, events
 
