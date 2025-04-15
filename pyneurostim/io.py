@@ -139,7 +139,7 @@ class NeuroStim:
         self.streams, _ = pyxdf.load_xdf(xdf_file)
         self.streams = {stream["info"]["stream_id"]: stream for stream in self.streams}
 
-    def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None, extended_annotation=False, include_vas=False):
+    def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None, extended_annotation=False):
         if len(self.eeg_streams) > 1:
             if eeg_stream_names is None:
                 raise RuntimeError("It is necessary to set the names of the EEG streams")
@@ -170,19 +170,6 @@ class NeuroStim:
                         event_name = "@".join([sample_type, block_type, trial_type])
                     else:
                         event_name = sample_type
-                    
-                    if event['sample_id'] + 1 < len(self.samples):
-                        next_sample = self.samples[event['sample_id'] + 1]
-                        # Add VAS result if present and requested
-                        if include_vas and next_sample and 'items' in next_sample:
-                            try:
-                                if self.check_item(next_sample['items'], 'Vas'):
-                                    vas_item = self.get_item(next_sample, 'Vas')
-                                    vas_value = self.get_property(vas_item, 'value')
-                                    event_name = f"{event_name}#VAS={vas_value}"
-                            except (KeyError, StopIteration):
-                                pass  # VAS item or property not found
-                            
 
                     events_name.append(event_name)
 
