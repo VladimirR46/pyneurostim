@@ -8,7 +8,7 @@ from mne.io import get_channel_type_constants
 import pandas as pd
 
 from .plot import plot_design
-from .xdf import _raw_xdf
+from .xdf import _raw_xdf, _aurora_nirs_raw_xdf
 
 
 def find_nearest(array, value):
@@ -139,6 +139,28 @@ class NeuroStim:
         self.streams, _ = pyxdf.load_xdf(xdf_file)
         self.streams = {stream["info"]["stream_id"]: stream for stream in self.streams}
 
+    def _make_annotations(self, raw, first_time, extended_annotation=False):
+        events = self.event_filter(event_name='show', event_source='sample')
+        events_time, events_name, events_duration = [], [], []
+        for event in events:
+            sample = self.samples[event['sample_id']]
+            sample_type = sample['sample_type']
+            trial_type = sample['trial_type']
+            block_type = sample['block_type']
+            if sample_type != "":
+                events_time.append(event['time'] - first_time)
+                events_duration.append(self.samples[event['sample_id']]['duration'])
+
+                # Build event name
+                if extended_annotation:
+                    event_name = "@".join([sample_type, block_type, trial_type])
+                else:
+                    event_name = sample_type
+
+                events_name.append(event_name)
+
+        raw.annotations.append(events_time, events_duration, events_name)
+
     def raw_xdf(self, annotation=False, eeg_stream_names=None, fs_new=None, extended_annotation=False):
         if len(self.eeg_streams) > 1:
             if eeg_stream_names is None:
@@ -154,43 +176,41 @@ class NeuroStim:
 
         # convert events to annotations
         if annotation:
-            events = self.event_filter(event_name='show', event_source='sample')
-            events_time, events_name, events_duration = [], [], []
-            for event in events:
-                sample = self.samples[event['sample_id']]
-                sample_type = sample['sample_type']
-                trial_type = sample['trial_type']
-                block_type = sample['block_type']
-                if sample_type != "":
-                    events_time.append(event['time']-first_time)
-                    events_duration.append(self.samples[event['sample_id']]['duration'])
-                    
-                    # Build event name
-                    if extended_annotation:
-                        event_name = "@".join([sample_type, block_type, trial_type])
-                    else:
-                        event_name = sample_type
-
-                    events_name.append(event_name)
-
-            raw.annotations.append(events_time, events_duration, events_name)
-
+            self._make_annotations(raw, first_time)
         events = self.events_to_df(raw, first_time)
         return raw, events
 
+    def get_stream_id(self, stream_name):
+        stream_id = None
+        for key, stream in self.streams.items():
+            if stream['info']['name'][0] == stream_name:
+                stream_id = key
+                break
+        if stream_id is None:
+            raise RuntimeError(f"Stream with name '{stream_name}' not found")
+        return stream_id
+
+    def get_stream(self, stream_name=None):
+        if self.xdf_file is None:
+            raise RuntimeError("XDF file not loaded")
+        stream_id = self.get_stream_id(stream_name)
+        return self.streams[stream_id]
+
     def raw_stream(self, stream_name=None, stream_id=None):
         if stream_name:
-            stream_id = None
-            for key, stream in self.streams.items():
-                if stream['info']['name'][0] == stream_name:
-                    stream_id = key
-                    break
-            if stream_id is None:
-                raise RuntimeError(f"Stream with name '{stream_name}' not found")
+            stream_id = self.get_stream_id(stream_name)
         elif stream_id is None:
             raise RuntimeError("It is necessary to set the name or ID of the stream")
 
         raw, first_time = _raw_xdf(self.streams, self.xdf_file, [stream_id])
+        events = self.events_to_df(raw, first_time)
+        return raw, events
+
+    def raw_aurora_nirs(self, stream_name=None, annotation=False, dig_file=None):
+        stream_id = self.get_stream_id(stream_name)
+        raw, first_time = _aurora_nirs_raw_xdf(self.streams, self.xdf_file, stream_id, dig_file)
+        if annotation:
+           self._make_annotations(raw, first_time)
         events = self.events_to_df(raw, first_time)
         return raw, events
 
